@@ -9,6 +9,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 
 <style>
+
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;600;800&display=swap');
 
 :root{
@@ -142,7 +143,7 @@ main{
 .halt-overlay{
   position:fixed;
   inset:0;
-  background:rgba(0,0,0,0.92);
+  background:rgba(0,0,0,0.94);
   z-index:99999;
   display:none;
   align-items:center;
@@ -172,6 +173,7 @@ main{
 }
 
 @media(max-width:900px){
+
   main{
     grid-template-columns:1fr;
   }
@@ -181,63 +183,100 @@ main{
     grid-column:span 1;
   }
 }
+
 </style>
 </head>
 
 <body>
 
 <div class="halt-overlay" id="haltOverlay">
-  <div class="halt-title">SYSTEM HALTED</div>
+
+  <div class="halt-title">
+    SYSTEM HALTED
+  </div>
+
   <div class="halt-reason" id="haltReason">
     UNKNOWN FAULT
   </div>
+
 </div>
 
 <header>
-  <div class="title">MachineGuard</div>
-  <div class="status" id="connStatus">CONNECTING...</div>
+
+  <div class="title">
+    MachineGuard
+  </div>
+
+  <div class="status" id="connStatus">
+    CONNECTING...
+  </div>
+
 </header>
 
 <main>
 
-  <div class="card">
-    <div class="card-title">TEMPERATURE</div>
-    <div class="value" id="tempVal">
-      -- <span class="unit">°C</span>
-    </div>
+<div class="card">
+
+  <div class="card-title">
+    TEMPERATURE
   </div>
 
-  <div class="card">
-    <div class="card-title">VIBRATION</div>
-    <div class="value" id="vibVal">
-      -- <span class="unit">/s</span>
-    </div>
+  <div class="value" id="tempVal">
+    -- <span class="unit">°C</span>
   </div>
 
-  <div class="card">
-    <div class="card-title">SHOCK</div>
-    <div class="value" id="accelVal">
-      -- <span class="unit">m/s²</span>
-    </div>
+</div>
+
+<div class="card">
+
+  <div class="card-title">
+    VIBRATION
   </div>
 
-  <div class="card">
-    <div class="card-title">HEALTH</div>
-    <div class="value" id="healthVal">
-      -- <span class="unit">%</span>
-    </div>
+  <div class="value" id="vibVal">
+    -- <span class="unit">/s</span>
   </div>
 
-  <div class="card chart-card">
-    <canvas id="trendChart"></canvas>
+</div>
+
+<div class="card">
+
+  <div class="card-title">
+    SHOCK
   </div>
 
-  <div class="card alert-card">
-    <div class="card-title">ALERT LOG</div>
-
-    <div class="alert-log" id="alertLog">
-    </div>
+  <div class="value" id="accelVal">
+    -- <span class="unit">m/s²</span>
   </div>
+
+</div>
+
+<div class="card">
+
+  <div class="card-title">
+    HEALTH
+  </div>
+
+  <div class="value" id="healthVal">
+    -- <span class="unit">%</span>
+  </div>
+
+</div>
+
+<div class="card chart-card">
+  <canvas id="trendChart"></canvas>
+</div>
+
+<div class="card alert-card">
+
+  <div class="card-title">
+    ALERT LOG
+  </div>
+
+  <div class="alert-log" id="alertLog">
+  </div>
+
+</div>
 
 </main>
 
@@ -262,12 +301,16 @@ const state = {
   halted:false
 };
 
-const ctx = document.getElementById('trendChart').getContext('2d');
+const ctx = document
+  .getElementById('trendChart')
+  .getContext('2d');
 
 const chart = new Chart(ctx,{
   type:'line',
+
   data:{
     labels:[],
+
     datasets:[
       {
         label:'Temperature',
@@ -276,6 +319,7 @@ const chart = new Chart(ctx,{
         borderWidth:2,
         tension:0.4
       },
+
       {
         label:'Health',
         data:[],
@@ -285,6 +329,7 @@ const chart = new Chart(ctx,{
       }
     ]
   },
+
   options:{
     responsive:true,
     maintainAspectRatio:false
@@ -297,8 +342,8 @@ const client = mqtt.connect(BROKER,{
 
 client.on('connect',()=>{
 
-  document.getElementById('connStatus').textContent =
-    'MQTT CONNECTED';
+  document.getElementById('connStatus')
+    .textContent = 'MQTT CONNECTED';
 
   Object.values(TOPICS).forEach(topic=>{
     client.subscribe(topic);
@@ -311,8 +356,9 @@ client.on('connect',()=>{
 });
 
 client.on('offline',()=>{
-  document.getElementById('connStatus').textContent =
-    'MQTT OFFLINE';
+
+  document.getElementById('connStatus')
+    .textContent = 'MQTT OFFLINE';
 });
 
 client.on('message',(topic,payload)=>{
@@ -365,25 +411,36 @@ client.on('message',(topic,payload)=>{
 
       state.halted = true;
 
+      document.getElementById('haltOverlay')
+        .style.display = 'flex';
+
       pushAlert(
         'CRITICAL',
         'SYSTEM HALTED'
       );
     }
+
+    else{
+
+      state.halted = false;
+
+      document.getElementById('haltOverlay')
+        .style.display = 'none';
+    }
   }
 
   if(topic === TOPICS.fault){
 
-    document.getElementById('haltOverlay').style.display =
-      'flex';
+    if(msg.length > 0){
 
-    document.getElementById('haltReason').textContent =
-      msg;
+      document.getElementById('haltReason')
+        .textContent = msg;
 
-    pushAlert(
-      'CRITICAL',
-      msg
-    );
+      pushAlert(
+        'CRITICAL',
+        msg
+      );
+    }
   }
 
   applyStates();
@@ -393,30 +450,38 @@ function applyStates(){
 
   setValueColor(
     'tempVal',
-    state.temp >= 70 ? 'crit'
-    : state.temp >= 55 ? 'warn'
-    : 'good'
+    state.temp >= 70
+      ? 'crit'
+      : state.temp >= 55
+      ? 'warn'
+      : 'good'
   );
 
   setValueColor(
     'vibVal',
-    state.vib >= 20 ? 'crit'
-    : state.vib >= 10 ? 'warn'
-    : 'good'
+    state.vib >= 20
+      ? 'crit'
+      : state.vib >= 10
+      ? 'warn'
+      : 'good'
   );
 
   setValueColor(
     'accelVal',
-    state.accel >= 8 ? 'crit'
-    : state.accel >= 4 ? 'warn'
-    : 'good'
+    state.accel >= 8
+      ? 'crit'
+      : state.accel >= 4
+      ? 'warn'
+      : 'good'
   );
 
   setValueColor(
     'healthVal',
-    state.health <= 30 ? 'crit'
-    : state.health <= 60 ? 'warn'
-    : 'good'
+    state.health <= 30
+      ? 'crit'
+      : state.health <= 60
+      ? 'warn'
+      : 'good'
   );
 }
 
@@ -451,6 +516,7 @@ function pushAlert(level,msg){
   log.prepend(div);
 
   while(log.children.length > 25){
+
     log.removeChild(log.lastChild);
   }
 }
@@ -473,7 +539,8 @@ function addChartValue(index,val){
     chart.data.labels.push(now);
   }
 
-  chart.data.datasets[index].data.push(val);
+  chart.data.datasets[index]
+    .data.push(val);
 
   chart.update();
 }
