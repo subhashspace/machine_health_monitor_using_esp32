@@ -4,548 +4,452 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Machine Health Monitor</title>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.0.5/mqtt.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-
 <style>
-
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;600;800&display=swap');
 
-:root{
-  --bg:#060a0f;
-  --surf:#0d1520;
-  --border:#1a2d45;
-  --accent:#00e5ff;
-  --warn:#ffb300;
-  --crit:#ff1744;
-  --good:#00e676;
-  --hot:#ff6d00;
-  --dim:#3a5068;
-  --text:#c8dce8;
+:root {
+  --bg:      #060a0f;
+  --surf:    #0d1520;
+  --border:  #1a2d45;
+  --accent:  #00e5ff;
+  --warn:    #ffb300;
+  --crit:    #ff1744;
+  --good:    #00e676;
+  --dim:     #3a5068;
+  --text:    #c8dce8;
+  --hot:     #ff6d00;
+  --mono:    'Share Tech Mono', monospace;
+  --sans:    'Barlow Condensed', sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--sans); min-height: 100vh;
+}
+body::before {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.07) 2px, rgba(0,0,0,0.07) 4px);
 }
 
-*{
-  margin:0;
-  padding:0;
-  box-sizing:border-box;
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 28px; border-bottom: 1px solid var(--border);
+  background: rgba(0,229,255,0.02);
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-icon {
+  width: 34px; height: 34px; border: 2px solid var(--accent); border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; font-size: 16px;
+}
+.brand-name {
+  font-weight: 800; font-size: 18px; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--accent);
+}
+.brand-sub { font-size: 10px; color: var(--dim); letter-spacing: 2px; margin-top: 2px; }
+.conn-badge {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 11px;
+  padding: 5px 12px; border: 1px solid var(--border); border-radius: 20px;
+}
+.conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); transition: all .3s; }
+.conn-dot.on  { background: var(--good); box-shadow: 0 0 8px var(--good); }
+.conn-dot.off { background: var(--crit); }
+
+main {
+  padding: 20px 28px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  grid-template-rows: auto auto auto auto;
+  gap: 14px;
 }
 
-body{
-  background:var(--bg);
-  color:var(--text);
-  font-family:'Barlow Condensed',sans-serif;
-  min-height:100vh;
+.card {
+  background: var(--surf); border: 1px solid var(--border);
+  border-radius: 12px; padding: 18px; position: relative; overflow: hidden;
 }
-
-header{
-  padding:18px 30px;
-  border-bottom:1px solid var(--border);
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
+.card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: .3; transition: opacity .3s;
 }
+.card.state-good::before   { background: linear-gradient(90deg,transparent,var(--good),transparent); opacity:.9; }
+.card.state-warn::before   { background: linear-gradient(90deg,transparent,var(--warn),transparent); opacity:.9; }
+.card.state-crit::before   { background: linear-gradient(90deg,transparent,var(--crit),transparent); opacity:1; }
+.card.state-hot::before    { background: linear-gradient(90deg,transparent,var(--hot),transparent);  opacity:1; }
 
-.title{
-  color:var(--accent);
-  font-size:28px;
-  font-weight:800;
-  letter-spacing:3px;
+.lbl { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--dim); margin-bottom: 6px; }
+.val { font-family: var(--mono); font-size: 32px; line-height: 1; color: var(--accent); }
+.val .unit { font-size: 13px; color: var(--dim); margin-left: 3px; }
+.sub { font-family: var(--mono); font-size: 10px; color: var(--dim); margin-top: 5px; }
+
+/* Health card — spans 2 cols */
+.health-card { grid-column: span 2; }
+.health-inner { display: flex; align-items: center; gap: 20px; }
+.ring-wrap { position: relative; width: 110px; height: 110px; flex-shrink: 0; }
+.ring-svg { width: 110px; height: 110px; transform: rotate(-90deg); }
+.ring-bg   { fill: none; stroke: var(--border); stroke-width: 9; }
+.ring-arc  { fill: none; stroke-width: 9; stroke-linecap: round;
+             stroke-dasharray: 283; transition: stroke-dashoffset .6s cubic-bezier(.4,0,.2,1), stroke .4s; }
+.ring-lbl  { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ring-pct  { font-family: var(--mono); font-size: 26px; color: var(--accent); line-height: 1; }
+.ring-txt  { font-size: 9px; color: var(--dim); letter-spacing: 1px; margin-top: 2px; }
+.tier      { font-size: 22px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+.tier.good     { color: var(--good); }
+.tier.degraded { color: #69f0ae; }
+.tier.warning  { color: var(--warn); }
+.tier.critical { color: var(--crit); animation: blink .5s step-end infinite; }
+.trend     { font-family: var(--mono); font-size: 11px; margin-bottom: 4px; }
+.trend.declining { color: var(--crit); }
+.trend.rising    { color: var(--hot); }
+.trend.improving { color: var(--good); }
+.trend.stable    { color: var(--dim); }
+@keyframes blink { 50%{ opacity: 0; } }
+
+/* Temp card — spans 2 cols */
+.temp-card { grid-column: span 2; }
+.temp-bar-wrap { margin-top: 10px; position: relative; }
+.temp-bar-track { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
+.temp-bar-fill  { height: 100%; border-radius: 4px; transition: width .5s, background .4s; }
+.temp-markers   { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9px; color: var(--dim); margin-top: 3px; }
+.temp-trend-badge {
+  display: inline-block; margin-top: 8px;
+  padding: 2px 8px; border-radius: 10px; font-family: var(--mono); font-size: 10px;
 }
+.temp-trend-badge.rising  { background: rgba(255,109,0,.2); color: var(--hot); border: 1px solid var(--hot); }
+.temp-trend-badge.cooling { background: rgba(0,230,118,.1); color: var(--good); border: 1px solid var(--good); }
+.temp-trend-badge.stable  { background: rgba(58,80,104,.3); color: var(--dim); border: 1px solid var(--border); }
 
-.status{
-  font-family:'Share Tech Mono',monospace;
-  font-size:13px;
+/* Chart card — spans 4 */
+.chart-card { grid-column: span 4; height: 180px; }
+.chart-card canvas { max-height: 145px; }
+
+/* Alert panel — spans 4 */
+.alert-panel { grid-column: span 4; max-height: 210px; overflow-y: auto; }
+.alert-list  { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.aitem {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 6px; border-left: 3px solid;
+  font-family: var(--mono); font-size: 11px; background: rgba(0,0,0,.3);
 }
+.aitem.CRITICAL { border-color: var(--crit); color: var(--crit); }
+.aitem.WARNING  { border-color: var(--warn); color: var(--warn); }
+.aitem.INFO     { border-color: var(--accent); color: var(--accent); }
+.atime { color: var(--dim); flex-shrink:0; width: 78px; }
 
-main{
-  padding:20px;
-  display:grid;
-  grid-template-columns:repeat(4,1fr);
-  gap:15px;
-}
-
-.card{
-  background:var(--surf);
-  border:1px solid var(--border);
-  border-radius:12px;
-  padding:18px;
-}
-
-.card-title{
-  color:var(--dim);
-  font-size:11px;
-  letter-spacing:2px;
-  margin-bottom:10px;
-}
-
-.value{
-  font-family:'Share Tech Mono',monospace;
-  font-size:34px;
-}
-
-.unit{
-  font-size:15px;
-  color:var(--dim);
-}
-
-.good{
-  color:var(--good);
-}
-
-.warn{
-  color:var(--warn);
-}
-
-.crit{
-  color:var(--crit);
-}
-
-.chart-card{
-  grid-column:span 4;
-  height:260px;
-}
-
-.alert-card{
-  grid-column:span 4;
-}
-
-.alert-log{
-  margin-top:12px;
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-}
-
-.alert-item{
-  padding:8px 10px;
-  border-left:4px solid;
-  background:#081018;
-  font-family:'Share Tech Mono',monospace;
-  font-size:12px;
-}
-
-.alert-item.INFO{
-  border-color:var(--accent);
-  color:var(--accent);
-}
-
-.alert-item.WARNING{
-  border-color:var(--warn);
-  color:var(--warn);
-}
-
-.alert-item.CRITICAL{
-  border-color:var(--crit);
-  color:var(--crit);
-}
-
-.halt-overlay{
-  position:fixed;
-  inset:0;
-  background:rgba(0,0,0,0.94);
-  z-index:99999;
-  display:none;
-  align-items:center;
-  justify-content:center;
-  flex-direction:column;
-  animation:blink 0.7s infinite;
-}
-
-.halt-title{
-  font-size:52px;
-  color:var(--crit);
-  font-weight:800;
-  letter-spacing:4px;
-}
-
-.halt-reason{
-  margin-top:20px;
-  font-size:24px;
-  color:white;
-  font-family:'Share Tech Mono',monospace;
-}
-
-@keyframes blink{
-  50%{
-    opacity:0.7;
-  }
-}
-
-@media(max-width:900px){
-
-  main{
-    grid-template-columns:1fr;
-  }
-
-  .chart-card,
-  .alert-card{
-    grid-column:span 1;
-  }
-}
-
+@keyframes pulse { 50%{ text-shadow: 0 0 12px currentColor; } }
+.pulse { animation: pulse .35s ease-out; }
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 </style>
 </head>
-
 <body>
 
-<div class="halt-overlay" id="haltOverlay">
-
-  <div class="halt-title">
-    SYSTEM HALTED
-  </div>
-
-  <div class="halt-reason" id="haltReason">
-    UNKNOWN FAULT
-  </div>
-
-</div>
-
 <header>
-
-  <div class="title">
-    MachineGuard
+  <div class="brand">
+    <div class="brand-icon">⚙</div>
+    <div>
+      <div class="brand-name">MachineGuard</div>
+      <div class="brand-sub">ESP32 · MPU6050 · NTC 10K Thermistor</div>
+    </div>
   </div>
-
-  <div class="status" id="connStatus">
-    CONNECTING...
+  <div class="conn-badge">
+    <div class="conn-dot" id="dot"></div>
+    <span id="connLbl">CONNECTING...</span>
   </div>
-
 </header>
 
 <main>
 
-<div class="card">
-
-  <div class="card-title">
-    TEMPERATURE
+  <!-- HEALTH RING -->
+  <div class="card health-card" id="healthCard">
+    <div class="lbl">Overall Health Score</div>
+    <div class="health-inner">
+      <div class="ring-wrap">
+        <svg class="ring-svg" viewBox="0 0 110 110">
+          <circle class="ring-bg"  cx="55" cy="55" r="45"/>
+          <circle class="ring-arc" cx="55" cy="55" r="45" id="ringArc"/>
+        </svg>
+        <div class="ring-lbl">
+          <div class="ring-pct" id="ringPct">--</div>
+          <div class="ring-txt">HEALTH</div>
+        </div>
+      </div>
+      <div>
+        <div class="tier good" id="tierLbl">LOADING</div>
+        <div class="trend stable" id="trendLbl">↔ Awaiting data</div>
+        <div class="sub" id="healthTs">--</div>
+      </div>
+    </div>
   </div>
 
-  <div class="value" id="tempVal">
-    -- <span class="unit">°C</span>
+  <!-- TEMPERATURE -->
+  <div class="card temp-card" id="tempCard">
+    <div class="lbl">Temperature</div>
+    <div class="val" id="tempVal">--<span class="unit">°C</span></div>
+    <div class="temp-bar-wrap">
+      <div class="temp-bar-track">
+        <div class="temp-bar-fill" id="tempBar" style="width:0%"></div>
+      </div>
+      <div class="temp-markers"><span>20°</span><span>45°</span><span>55°</span><span>70°+</span></div>
+    </div>
+    <div id="tempTrendBadge" class="temp-trend-badge stable">↔ STABLE</div>
+    <div class="sub" id="tempSub">Warn: 55°C  Critical: 70°C</div>
   </div>
 
-</div>
-
-<div class="card">
-
-  <div class="card-title">
-    VIBRATION
+  <!-- ACCEL -->
+  <div class="card" id="accelCard">
+    <div class="lbl">Dynamic Shock</div>
+    <div class="val" id="accelVal">--<span class="unit">m/s²</span></div>
+    <div class="sub" id="accelSub">Net after gravity offset</div>
   </div>
 
-  <div class="value" id="vibVal">
-    -- <span class="unit">/s</span>
+  <!-- VIBRATION -->
+  <div class="card" id="vibCard">
+    <div class="lbl">Vibration (real)</div>
+    <div class="val" id="vibVal">--<span class="unit">/s</span></div>
+    <div class="sub" id="vibSub">Noise floor filtered</div>
   </div>
 
-</div>
-
-<div class="card">
-
-  <div class="card-title">
-    SHOCK
+  <!-- GYRO -->
+  <div class="card" id="gyroCard">
+    <div class="lbl">Gyroscope</div>
+    <div class="val" id="gyroVal">--<span class="unit">rad/s</span></div>
+    <div class="sub">Angular rate (calibrated)</div>
   </div>
 
-  <div class="value" id="accelVal">
-    -- <span class="unit">m/s²</span>
+  <!-- COMBO INDICATOR -->
+  <div class="card" id="comboCard">
+    <div class="lbl">Temp + Vib Combo</div>
+    <div class="val" id="comboVal" style="font-size:18px; color: var(--dim);">--</div>
+    <div class="sub" id="comboSub">≥45°C + ≥5 vib/s = accelerated wear</div>
   </div>
 
-</div>
-
-<div class="card">
-
-  <div class="card-title">
-    HEALTH
+  <!-- TREND CHART -->
+  <div class="card chart-card">
+    <div class="lbl">Live Temperature + Health Trend</div>
+    <canvas id="trendChart"></canvas>
   </div>
 
-  <div class="value" id="healthVal">
-    -- <span class="unit">%</span>
+  <!-- ALERT LOG -->
+  <div class="card alert-panel">
+    <div class="lbl">Alert Log</div>
+    <div class="alert-list" id="alertList">
+      <div class="aitem INFO"><span class="atime">--:--:--</span><span>Waiting for connection...</span></div>
+    </div>
   </div>
-
-</div>
-
-<div class="card chart-card">
-  <canvas id="trendChart"></canvas>
-</div>
-
-<div class="card alert-card">
-
-  <div class="card-title">
-    ALERT LOG
-  </div>
-
-  <div class="alert-log" id="alertLog">
-  </div>
-
-</div>
 
 </main>
 
 <script>
-
+// ══════════════════════════════════════════════════════
 const BROKER = 'wss://broker.hivemq.com:8884/mqtt';
-
 const TOPICS = {
-  temp:'machine/temp',
-  vib:'machine/vibcount',
-  accel:'machine/accel',
-  health:'machine/health',
-  alert:'machine/alert',
-  fault:'machine/fault_reason'
+  accel:'machine/accel', gyro:'machine/gyro',
+  vib:'machine/vibcount', temp:'machine/temp',
+  health:'machine/health', alert:'machine/alert',
+  cloud:'machine/cloud_alert'
 };
 
-const state = {
-  temp:0,
-  vib:0,
-  accel:0,
-  health:100,
-  halted:false
+const S = {
+  accel:0, gyro:0, vib:0, temp:0, health:100,
+  tempHist:[], healthHist:[], alertLog:[]
 };
 
-const ctx = document
-  .getElementById('trendChart')
-  .getContext('2d');
-
-const chart = new Chart(ctx,{
-  type:'line',
-
-  data:{
-    labels:[],
-
-    datasets:[
+// ── Chart setup ──────────────────────────────────────
+const ctx = document.getElementById('trendChart').getContext('2d');
+const chart = new Chart(ctx, {
+  data: {
+    labels: [],
+    datasets: [
       {
-        label:'Temperature',
-        data:[],
-        borderColor:'#ff6d00',
-        borderWidth:2,
-        tension:0.4
+        type:'line', label:'Health %', data:[], yAxisID:'yH',
+        borderColor:'#00e5ff', backgroundColor:'rgba(0,229,255,0.05)',
+        borderWidth:2, pointRadius:0, tension:.4, fill:true
       },
-
       {
-        label:'Health',
-        data:[],
-        borderColor:'#00e5ff',
-        borderWidth:2,
-        tension:0.4
+        type:'line', label:'Temp °C', data:[], yAxisID:'yT',
+        borderColor:'#ff6d00', backgroundColor:'rgba(255,109,0,0.05)',
+        borderWidth:2, pointRadius:0, tension:.4, fill:false
       }
     ]
   },
-
-  options:{
-    responsive:true,
-    maintainAspectRatio:false
-  }
-});
-
-const client = mqtt.connect(BROKER,{
-  reconnectPeriod:2000
-});
-
-client.on('connect',()=>{
-
-  document.getElementById('connStatus')
-    .textContent = 'MQTT CONNECTED';
-
-  Object.values(TOPICS).forEach(topic=>{
-    client.subscribe(topic);
-  });
-
-  pushAlert(
-    'INFO',
-    'Dashboard connected'
-  );
-});
-
-client.on('offline',()=>{
-
-  document.getElementById('connStatus')
-    .textContent = 'MQTT OFFLINE';
-});
-
-client.on('message',(topic,payload)=>{
-
-  const msg = payload.toString();
-
-  if(topic === TOPICS.temp){
-
-    state.temp = parseFloat(msg);
-
-    document.getElementById('tempVal').innerHTML =
-      state.temp.toFixed(1) +
-      ' <span class="unit">°C</span>';
-
-    addChartValue(0,state.temp);
-  }
-
-  if(topic === TOPICS.vib){
-
-    state.vib = parseInt(msg);
-
-    document.getElementById('vibVal').innerHTML =
-      state.vib +
-      ' <span class="unit">/s</span>';
-  }
-
-  if(topic === TOPICS.accel){
-
-    state.accel = parseFloat(msg);
-
-    document.getElementById('accelVal').innerHTML =
-      state.accel.toFixed(2) +
-      ' <span class="unit">m/s²</span>';
-  }
-
-  if(topic === TOPICS.health){
-
-    state.health = parseInt(msg);
-
-    document.getElementById('healthVal').innerHTML =
-      state.health +
-      ' <span class="unit">%</span>';
-
-    addChartValue(1,state.health);
-  }
-
-  if(topic === TOPICS.alert){
-
-    if(msg === 'CRITICAL'){
-
-      state.halted = true;
-
-      document.getElementById('haltOverlay')
-        .style.display = 'flex';
-
-      pushAlert(
-        'CRITICAL',
-        'SYSTEM HALTED'
-      );
-    }
-
-    else{
-
-      state.halted = false;
-
-      document.getElementById('haltOverlay')
-        .style.display = 'none';
+  options: {
+    responsive:true, maintainAspectRatio:false, animation:{duration:300},
+    interaction:{ mode:'index', intersect:false },
+    scales:{
+      x:{ display:false },
+      yH:{ position:'left',  min:0,  max:100, grid:{color:'rgba(26,45,69,.8)'},
+           ticks:{color:'#3a5068', font:{family:'Share Tech Mono', size:9}} },
+      yT:{ position:'right', min:20, max:90,  grid:{display:false},
+           ticks:{color:'#ff6d00', font:{family:'Share Tech Mono', size:9}} }
+    },
+    plugins:{
+      legend:{ labels:{ color:'#3a5068', font:{family:'Share Tech Mono', size:10} } }
     }
   }
-
-  if(topic === TOPICS.fault){
-
-    if(msg.length > 0){
-
-      document.getElementById('haltReason')
-        .textContent = msg;
-
-      pushAlert(
-        'CRITICAL',
-        msg
-      );
-    }
-  }
-
-  applyStates();
 });
 
-function applyStates(){
+// ── MQTT ─────────────────────────────────────────────
+const client = mqtt.connect(BROKER, {
+  clientId: 'Dash_' + Math.random().toString(16).slice(2,8),
+  clean:true, reconnectPeriod:3000
+});
 
-  setValueColor(
-    'tempVal',
-    state.temp >= 70
-      ? 'crit'
-      : state.temp >= 55
-      ? 'warn'
-      : 'good'
-  );
+client.on('connect', () => {
+  setConn(true);
+  Object.values(TOPICS).forEach(t => client.subscribe(t));
+  pushAlert('INFO', '✅ Dashboard connected to broker');
+});
+client.on('offline', () => setConn(false));
+client.on('error',   () => setConn(false));
 
-  setValueColor(
-    'vibVal',
-    state.vib >= 20
-      ? 'crit'
-      : state.vib >= 10
-      ? 'warn'
-      : 'good'
-  );
+client.on('message', (topic, raw) => {
+  const v = raw.toString();
 
-  setValueColor(
-    'accelVal',
-    state.accel >= 8
-      ? 'crit'
-      : state.accel >= 4
-      ? 'warn'
-      : 'good'
-  );
+  if (topic === TOPICS.cloud) {
+    try { const o = JSON.parse(v); pushAlert(o.level, o.msg); } catch {}
+    return;
+  }
 
-  setValueColor(
-    'healthVal',
-    state.health <= 30
-      ? 'crit'
-      : state.health <= 60
-      ? 'warn'
-      : 'good'
-  );
+  const n = parseFloat(v);
+  if (topic === TOPICS.accel)  S.accel  = n;
+  if (topic === TOPICS.gyro)   S.gyro   = n;
+  if (topic === TOPICS.vib)    S.vib    = parseInt(v);
+  if (topic === TOPICS.alert)  S.alertLevel = parseInt(v);
+
+  if (topic === TOPICS.temp) {
+    S.temp = n;
+    S.tempHist.push(n); if (S.tempHist.length > 60) S.tempHist.shift();
+  }
+  if (topic === TOPICS.health) {
+    S.health = parseInt(v);
+    S.healthHist.push(S.health); if (S.healthHist.length > 60) S.healthHist.shift();
+    updateChart();
+  }
+
+  updateUI();
+});
+
+// ── UI update ─────────────────────────────────────────
+function updateUI() {
+  const { accel, gyro, vib, temp, health, tempHist } = S;
+
+  // ── Temperature ──
+  const tEl = document.getElementById('tempVal');
+  tEl.innerHTML = temp.toFixed(1) + '<span class="unit">°C</span>';
+  pulse(tEl);
+  const barPct  = Math.min(100, Math.max(0, (temp - 20) / 60 * 100));
+  const barColor = temp >= 70 ? '#ff1744' : temp >= 55 ? '#ffb300' : temp >= 45 ? '#ff6d00' : '#00e676';
+  document.getElementById('tempBar').style.width    = barPct + '%';
+  document.getElementById('tempBar').style.background = barColor;
+  setCardState('tempCard', temp >= 70 ? 'crit' : temp >= 55 ? 'warn' : temp >= 45 ? 'hot' : 'good');
+
+  // Temp trend
+  let tempTrend = 'stable';
+  if (tempHist.length >= 10) {
+    const rA = avg(tempHist.slice(-5)), bA = avg(tempHist.slice(-10,-5));
+    if      (rA - bA >  1.5) tempTrend = 'rising';
+    else if (bA - rA >  1.5) tempTrend = 'cooling';
+  }
+  const badge = document.getElementById('tempTrendBadge');
+  badge.className = 'temp-trend-badge ' + tempTrend;
+  badge.textContent = tempTrend === 'rising' ? '↑ RISING' : tempTrend === 'cooling' ? '↓ COOLING' : '↔ STABLE';
+
+  // ── Accel ──
+  const aEl = document.getElementById('accelVal');
+  aEl.innerHTML = accel.toFixed(3) + '<span class="unit">m/s²</span>';
+  setCardState('accelCard', accel >= 4 ? 'crit' : accel >= 1.5 ? 'warn' : 'good');
+  document.getElementById('accelSub').textContent = accel < 0.1 ? '✓ No shock detected' : `Shock: ${accel.toFixed(3)} m/s²`;
+
+  // ── Vibration ──
+  document.getElementById('vibVal').innerHTML = vib + '<span class="unit">/s</span>';
+  setCardState('vibCard', vib >= 12 ? 'crit' : vib >= 5 ? 'warn' : 'good');
+  document.getElementById('vibSub').textContent = vib === 0 ? '✓ Silent' : `${vib} real pulse(s)/s`;
+
+  // ── Gyro ──
+  document.getElementById('gyroVal').innerHTML = gyro.toFixed(3) + '<span class="unit">rad/s</span>';
+
+  // ── Combo ──
+  const comboActive = temp >= 45 && vib >= 5;
+  const comboEl = document.getElementById('comboVal');
+  comboEl.style.fontSize = '18px';
+  if (comboActive) {
+    comboEl.textContent = '⚠ COMBO ACTIVE';
+    comboEl.style.color = 'var(--hot)';
+    setCardState('comboCard', 'warn');
+  } else {
+    comboEl.textContent = '✓ Normal';
+    comboEl.style.color = 'var(--good)';
+    setCardState('comboCard', 'good');
+  }
+
+  // ── Health ring ──
+  const score = health;
+  const circumference = 283;
+  const offset = circumference - (circumference * score / 100);
+  document.getElementById('ringArc').style.strokeDashoffset = offset;
+  const ringColor = score >= 80 ? '#00e676' : score >= 60 ? '#69f0ae' : score >= 40 ? '#ffb300' : '#ff1744';
+  document.getElementById('ringArc').style.stroke = ringColor;
+  document.getElementById('ringPct').textContent  = score;
+
+  const tier = score >= 80 ? 'good' : score >= 60 ? 'degraded' : score >= 40 ? 'warning' : 'critical';
+  const tierEl = document.getElementById('tierLbl');
+  tierEl.textContent = tier.toUpperCase();
+  tierEl.className   = 'tier ' + tier;
+  setCardState('healthCard', tier === 'critical' ? 'crit' : tier === 'warning' ? 'warn' : 'good');
+
+  // Health trend
+  const hist = S.healthHist;
+  let healthTrend = 'stable';
+  if (hist.length >= 6) {
+    const r = avg(hist.slice(-3)), o = avg(hist.slice(-6,-3));
+    if      (o - r > 5) healthTrend = 'declining';
+    else if (r - o > 5) healthTrend = 'improving';
+  }
+  const trendEl = document.getElementById('trendLbl');
+  trendEl.textContent = healthTrend === 'declining' ? '↓ Declining'
+                      : healthTrend === 'improving' ? '↑ Improving' : '↔ Stable';
+  trendEl.className = 'trend ' + healthTrend;
+  document.getElementById('healthTs').textContent = 'Updated: ' + new Date().toLocaleTimeString();
 }
 
-function setValueColor(id,cls){
+function updateChart() {
+  const len    = Math.max(S.healthHist.length, S.tempHist.length);
+  const labels = Array.from({length:len}, (_,i) => i.toString());
+  chart.data.labels = labels;
+  chart.data.datasets[0].data = [...S.healthHist];
+  chart.data.datasets[1].data = [...S.tempHist];
+  chart.update('none');
+}
 
+function setCardState(id, state) {
   const el = document.getElementById(id);
-
-  el.classList.remove(
-    'good',
-    'warn',
-    'crit'
-  );
-
-  el.classList.add(cls);
+  el.classList.remove('state-good','state-warn','state-crit','state-hot');
+  el.classList.add('state-' + state);
 }
 
-function pushAlert(level,msg){
+function avg(arr) { return arr.length ? arr.reduce((s,v)=>s+v,0)/arr.length : 0; }
 
-  const log = document.getElementById('alertLog');
-
-  const div = document.createElement('div');
-
-  div.className =
-    'alert-item ' + level;
-
-  div.textContent =
-    '[' +
-    new Date().toLocaleTimeString() +
-    '] ' +
-    msg;
-
-  log.prepend(div);
-
-  while(log.children.length > 25){
-
-    log.removeChild(log.lastChild);
-  }
+function pulse(el) {
+  el.classList.remove('pulse');
+  void el.offsetWidth;
+  el.classList.add('pulse');
 }
 
-function addChartValue(index,val){
-
-  const now =
-    new Date().toLocaleTimeString();
-
-  if(chart.data.labels.length > 30){
-
-    chart.data.labels.shift();
-
-    chart.data.datasets.forEach(ds=>{
-      ds.data.shift();
-    });
-  }
-
-  if(index === 0){
-    chart.data.labels.push(now);
-  }
-
-  chart.data.datasets[index]
-    .data.push(val);
-
-  chart.update();
+function setConn(on) {
+  document.getElementById('dot').className    = 'conn-dot ' + (on ? 'on' : 'off');
+  document.getElementById('connLbl').textContent = on ? 'MQTT LIVE' : 'DISCONNECTED';
 }
 
+function pushAlert(level, msg) {
+  S.alertLog.unshift({ time: new Date().toLocaleTimeString(), level, msg });
+  if (S.alertLog.length > 40) S.alertLog.pop();
+  document.getElementById('alertList').innerHTML = S.alertLog.map(a =>
+    `<div class="aitem ${a.level}"><span class="atime">${a.time}</span><span>${a.msg}</span></div>`
+  ).join('');
+}
 </script>
-
 </body>
 </html>
